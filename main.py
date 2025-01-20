@@ -1,40 +1,46 @@
 import shodan
+import time
+import requests
 
-def получить_ключ():
-    print("=" * 50)
-    print("1. Зарегистрируйтесь на Shodan.io")
-    print("2. В личном кабинете найдите свой API-ключ")
-    print("=" * 50)
-    return input("Введите ваш Shodan API-ключ: ").strip()
-
-def создать_запрос():
-    страна = input("Страна (например, RU/US/CN или Enter для всех): ") 
-    порт = input("Порт (по умолчанию 554): ") or "554"
-    фильтр = input("Фильтр (rtsp/webcam/dvr или Enter): ") or "rtsp"
-    return f"{фильтр} port:{порт} country:{страна}" if страна else f"{фильтр} port:{порт}"
+def bypass_403(api_key, query, retries=3, delay=10):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", 
+        "Authorization": f"Shodan {api_key}"
+    }
+    
+    for _ in range(retries):
+        try:
+            response = requests.get(
+                f"https://api.shodan.io/shodan/host/search?query={query}&key={api_key}",
+                headers=headers,
+                timeout=15
+            )
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 403:
+                print(f"[!] 403 Forbidden. Попытка {_+1}/{retries}...")
+                time.sleep(delay)
+        except Exception as e:
+            print(f"[!] Ошибка: {e}")
+    return None
 
 def main():
-    api_key = получить_ключ()
-    if not api_key:
-        print("[!] API-ключ обязателен!")
+    api_key = input("API-ключ Shodan: ").strip()
+    query = input("Фильтр (например, 'rtsp'): ").strip() or "rtsp"
+    
+    data = bypass_403(api_key, query)
+    
+    if not data:
+        print("[!] Ошибка 403: доступ запрещён. Решения:")
+        print("- Проверьте API-ключ в [Shodan Dashboard](https://developer.shodan.io/dashboard)")
+        print("- Смените IP-адрес (используйте VPN/прокси)")
+        print("- Купите премиум-аккаунт Shodan")
         return
-
-    try:
-        api = shodan.Shodan(api_key)
-        запрос = создать_запрос()
-        print(f"\n[+] Идёт сканирование: {запрос}...")
-        результаты = api.search(запрос)
-        
-        for dev in результаты['matches']:
-            print("\n" + "-" * 40)
-            print(f"IP: {dev['ip_str']}:{dev['port']}")
-            print(f"Организация: {dev.get('org', 'N/A')}")
-            print(f"RTSP: rtsp://{dev['ip_str']}:{dev['port']}/live")
-            
-    except shodan.APIError as e:
-        print(f"[!] Ошибка Shodan: {e}")
-    except Exception as e:
-        print(f"[!] Критическая ошибка: {e}")
+    
+    print(f"\n[+] Устройств найдено: {data.get('total', 0)}")
+    for result in data.get('matches', []):
+        print(f"\nIP: {result['ip_str']}:{result['port']}")
+        print(f"RTSP: rtsp://{result['ip_str']}:{result['port']}/live")
 
 if __name__ == "__main__":
     main()
